@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Phone-Only Signup</title>
+</head>
+<body>
+  <h2>Welcome to CoinClub 💰</h2>
+  <form id="signupForm">
+    <input type="tel" id="phone" placeholder="Enter your phone number" required />
+    <input type="tel" id="referrer" placeholder="Referrer's phone (optional)" />
+    <button type="submit">Sign Up</button>
+  </form>
+
+  <p id="result"></p>
+
+  <script>
+    const users = {}; // temp in-memory store
+    document.getElementById("signupForm").onsubmit = function(e) {
+      e.preventDefault();
+      const phone = phone.value.trim();
+      const referrer = referrer.value.trim();
+
+      if (users[phone]) {
+        result.textContent = "This number is already registered!";
+        return;
+      }
+
+      users[phone] = 100;
+      if (referrer && users[referrer]) {
+        users[referrer] += 100;
+        result.textContent = "Signup complete. You earned 100 coins. Referrer earned 100 too!";
+      } else if (referrer) {
+        result.textContent = "Signup complete. You earned 100 coins. Referrer not found.";
+      } else {
+        result.textContent = "Signup complete. You earned 100 coins.";
+      }
+    };
+  </script>
+</body>
+</html>
