@@ -1,4 +1,3 @@
-<!-- index.html -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -8,6 +7,7 @@
     body { font-family: sans-serif; padding: 20px; }
     input { margin: 5px; padding: 5px; }
     #usersList { margin-top: 20px; }
+    #userDataDump { white-space: pre-wrap; font-family: monospace; background: #f9f9f9; padding: 10px; border: 1px solid #ccc; margin-top: 30px; }
   </style>
 </head>
 <body>
@@ -26,37 +26,53 @@
     <ul id="userDisplay"></ul>
   </div>
 
-  <script>
-    async function updateUserList() {
-      const res = await fetch('/users');
-      const users = await res.json();
-      const list = document.getElementById("userDisplay");
-      list.innerHTML = "";
-      users.forEach(user => {
-        const li = document.createElement("li");
-        li.textContent = `${user.phone} (Coins: ${user.coins}, Referred by: ${user.referrer})`;
-        list.appendChild(li);
-      });
-    }
+  <h3>📦 Raw Signup Data (Appended Below)</h3>
+  <div id="userDataDump">---</div>
 
-    document.getElementById("signupForm").onsubmit = async function(e) {
+  <script>
+    const users = {};
+
+    document.getElementById("signupForm").onsubmit = function(e) {
       e.preventDefault();
       const phone = document.getElementById("phone").value.trim();
       const referrer = document.getElementById("referrer").value.trim();
       const result = document.getElementById("result");
 
-      const res = await fetch('/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, referrer })
-      });
+      if (users[phone]) {
+        result.textContent = "This number is already registered!";
+        return;
+      }
 
-      const message = await res.text();
-      result.textContent = message;
+      users[phone] = { coins: 100, referredBy: referrer || "None" };
+
+      if (referrer && users[referrer]) {
+        users[referrer].coins += 100;
+        result.textContent = `Signup complete. You earned 100 coins. Referrer ${referrer} earned 100 too!`;
+      } else if (referrer) {
+        result.textContent = `Signup complete. You earned 100 coins. Referrer not found.`;
+      } else {
+        result.textContent = `Signup complete. You earned 100 coins.`;
+      }
+
       updateUserList();
+      appendDataToBottom(phone, users[phone]);
     };
 
-    updateUserList();
+    function updateUserList() {
+      const list = document.getElementById("userDisplay");
+      list.innerHTML = "";
+      for (const phone in users) {
+        const li = document.createElement("li");
+        li.textContent = `${phone} (Coins: ${users[phone].coins}, Referred by: ${users[phone].referredBy})`;
+        list.appendChild(li);
+      }
+    }
+
+    function appendDataToBottom(phone, data) {
+      const dump = document.getElementById("userDataDump");
+      const line = `${phone} | Coins: ${data.coins} | Referred by: ${data.referredBy}`;
+      dump.textContent += `\n${line}`;
+    }
   </script>
 </body>
 </html>
