@@ -1,3 +1,4 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -26,44 +27,36 @@
   </div>
 
   <script>
-    const users = {}; // { phoneNumber: { coins, referredBy } }
+    async function updateUserList() {
+      const res = await fetch('/users');
+      const users = await res.json();
+      const list = document.getElementById("userDisplay");
+      list.innerHTML = "";
+      users.forEach(user => {
+        const li = document.createElement("li");
+        li.textContent = `${user.phone} (Coins: ${user.coins}, Referred by: ${user.referrer})`;
+        list.appendChild(li);
+      });
+    }
 
-    document.getElementById("signupForm").onsubmit = function(e) {
+    document.getElementById("signupForm").onsubmit = async function(e) {
       e.preventDefault();
       const phone = document.getElementById("phone").value.trim();
       const referrer = document.getElementById("referrer").value.trim();
       const result = document.getElementById("result");
 
-      if (users[phone]) {
-        result.textContent = "This number is already registered!";
-        return;
-      }
+      const res = await fetch('/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, referrer })
+      });
 
-      // Sign up the new user
-      users[phone] = { coins: 100, referredBy: referrer || "None" };
-
-      // Reward the referrer
-      if (referrer && users[referrer]) {
-        users[referrer].coins += 100;
-        result.textContent = `Signup complete. You earned 100 coins. Referrer ${referrer} earned 100 too!`;
-      } else if (referrer) {
-        result.textContent = `Signup complete. You earned 100 coins. Referrer not found.`;
-      } else {
-        result.textContent = `Signup complete. You earned 100 coins.`;
-      }
-
+      const message = await res.text();
+      result.textContent = message;
       updateUserList();
     };
 
-    function updateUserList() {
-      const list = document.getElementById("userDisplay");
-      list.innerHTML = "";
-      for (const phone in users) {
-        const li = document.createElement("li");
-        li.textContent = `${phone} (Coins: ${users[phone].coins}, Referred by: ${users[phone].referredBy})`;
-        list.appendChild(li);
-      }
-    }
+    updateUserList();
   </script>
 </body>
 </html>
