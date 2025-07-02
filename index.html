@@ -1,78 +1,30 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>CoinClub Sign-Up</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GuamCoin</title>
+  <link rel="manifest" href="manifest.json" />
   <style>
-    body { font-family: sans-serif; padding: 20px; }
-    input { margin: 5px; padding: 5px; }
-    #usersList { margin-top: 20px; }
-    #userDataDump { white-space: pre-wrap; font-family: monospace; background: #f9f9f9; padding: 10px; border: 1px solid #ccc; margin-top: 30px; }
+    body { font-family: sans-serif; padding: 1em; background: #f9f9f9; }
+    h1 { text-align: center; }
+    .card { background: white; padding: 1em; margin: 1em 0; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
   </style>
 </head>
 <body>
-  <h2>📲 Join CoinClub & Earn Coins!</h2>
-
-  <form id="signupForm">
-    <input type="tel" id="phone" placeholder="Your phone number" required />
-    <input type="tel" id="referrer" placeholder="Referrer's number (optional)" />
-    <button type="submit">Sign Up</button>
-  </form>
-
-  <p id="result"></p>
-
-  <div id="usersList">
-    <h3>📋 Registered Users</h3>
-    <ul id="userDisplay"></ul>
-  </div>
-
-  <h3>📦 Raw Signup Data (Appended Below)</h3>
-  <div id="userDataDump">---</div>
+  <h1>GuamCoin</h1>
+  <div id="data">Loading...</div>
 
   <script>
-    const users = {};
-
-    document.getElementById("signupForm").onsubmit = function(e) {
-      e.preventDefault();
-      const phone = document.getElementById("phone").value.trim();
-      const referrer = document.getElementById("referrer").value.trim();
-      const result = document.getElementById("result");
-
-      if (users[phone]) {
-        result.textContent = "This number is already registered!";
-        return;
-      }
-
-      users[phone] = { coins: 100, referredBy: referrer || "None" };
-
-      if (referrer && users[referrer]) {
-        users[referrer].coins += 100;
-        result.textContent = `Signup complete. You earned 100 coins. Referrer ${referrer} earned 100 too!`;
-      } else if (referrer) {
-        result.textContent = `Signup complete. You earned 100 coins. Referrer not found.`;
-      } else {
-        result.textContent = `Signup complete. You earned 100 coins.`;
-      }
-
-      updateUserList();
-      appendDataToBottom(phone, users[phone]);
-    };
-
-    function updateUserList() {
-      const list = document.getElementById("userDisplay");
-      list.innerHTML = "";
-      for (const phone in users) {
-        const li = document.createElement("li");
-        li.textContent = `${phone} (Coins: ${users[phone].coins}, Referred by: ${users[phone].referredBy})`;
-        list.appendChild(li);
-      }
-    }
-
-    function appendDataToBottom(phone, data) {
-      const dump = document.getElementById("userDataDump");
-      const line = `${phone} | Coins: ${data.coins} | Referred by: ${data.referredBy}`;
-      dump.textContent += `\n${line}`;
-    }
+    const sheetURL = "https://opensheet.elk.sh/1Nz5lhEwt8TFoymhjvWrFb-UDzgTEWxqgIIK7CkqYEeY/Sheet1";
+    fetch(sheetURL)
+      .then(res => res.json())
+      .then(data => {
+        const container = document.getElementById("data");
+        container.innerHTML = data.map(row => {
+          return `<div class="card">${Object.entries(row).map(([key, value]) => `<p><strong>${key}:</strong> ${value}</p>`).join("")}</div>`;
+        }).join("");
+      });
   </script>
 </body>
 </html>
