@@ -1,30 +1,125 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GuamCoin</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Microchain PWA</title>
   <link rel="manifest" href="manifest.json" />
   <style>
-    body { font-family: sans-serif; padding: 1em; background: #f9f9f9; }
-    h1 { text-align: center; }
-    .card { background: white; padding: 1em; margin: 1em 0; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+    body { font-family: sans-serif; background: #121212; color: #00ffcc; padding: 20px; }
+    input, button { margin: 5px; padding: 10px; background: #1e1e1e; color: #00ffcc; border: 1px solid #00ffcc; }
+    button:hover { background: #00ffcc; color: #121212; }
+    .block, .wallet { background: #1e1e1e; padding: 10px; margin-top: 10px; border-left: 4px solid #00ffcc; }
   </style>
 </head>
 <body>
-  <h1>GuamCoin</h1>
-  <div id="data">Loading...</div>
+  <h1>🔗 Microchain PWA</h1>
+  <input type="text" id="from" placeholder="Sender" />
+  <input type="text" id="to" placeholder="Receiver" />
+  <input type="number" id="amount" placeholder="Amount" />
+  <button onclick="send()">Send Tokens</button>
+  <button onclick="exportCSV()">📤 Export CSV</button>
+  <div id="wallets"></div>
+  <div id="blocks"></div>
 
   <script>
-    const sheetURL = "https://opensheet.elk.sh/1Nz5lhEwt8TFoymhjvWrFb-UDzgTEWxqgIIK7CkqYEeY/Sheet1";
-    fetch(sheetURL)
-      .then(res => res.json())
-      .then(data => {
-        const container = document.getElementById("data");
-        container.innerHTML = data.map(row => {
-          return `<div class="card">${Object.entries(row).map(([key, value]) => `<p><strong>${key}:</strong> ${value}</p>`).join("")}</div>`;
-        }).join("");
-      });
+    let db;
+    let chain = [];
+    let wallets = {};
+
+    const request = indexedDB.open("microchainDB", 1);
+    request.onupgradeneeded = e => {
+      db = e.target.result;
+      db.createObjectStore("blocks", { keyPath: "hash" });
+    };
+    request.onsuccess = e => {
+      db = e.target.result;
+      loadChain();
+    };
+
+    async function sha256(msg) {
+      const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(msg));
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function send() {
+      const from = document.getElementById('from').value.trim();
+      const to = document.getElementById('to').value.trim();
+      const amount = parseFloat(document.getElementById('amount').value);
+      if (!from || !to || isNaN(amount) || amount <= 0) return alert("Fill all fields.");
+
+      wallets[from] = wallets[from] || 1000;
+      wallets[to] = wallets[to] || 1000;
+      if (wallets[from] < amount) return alert("Insufficient balance.");
+
+      wallets[from] -= amount;
+      wallets[to] += amount;
+
+      const prev = chain.length ? chain[chain.length - 1].hash : "0";
+      const block = { time: new Date().toISOString(), from, to, amount, prev };
+      block.hash = await sha256(JSON.stringify(block));
+      chain.push(block);
+
+      const tx = db.transaction("blocks", "readwrite");
+      tx.objectStore("blocks").add(block);
+
+      render();
+      document.getElementById('from').value = "";
+      document.getElementById('to').value = "";
+      document.getElementById('amount').value = "";
+    }
+
+    function loadChain() {
+      const tx = db.transaction("blocks", "readonly");
+      const store = tx.objectStore("blocks");
+      const req = store.openCursor();
+      req.onsuccess = e => {
+        const cursor = e.target.result;
+        if (cursor) {
+          const block = cursor.value;
+          chain.push(block);
+          wallets[block.from] = (wallets[block.from] || 1000) - block.amount;
+          wallets[block.to] = (wallets[block.to] || 1000) + block.amount;
+          cursor.continue();
+        } else {
+          render();
+        }
+      };
+    }
+
+    function render() {
+      document.getElementById("wallets").innerHTML = "<h2>💰 Wallets</h2>" +
+        Object.entries(wallets).map(([k,v]) => `<div class="wallet">${k}: ${v.toFixed(2)}</div>`).join("");
+      document.getElementById("blocks").innerHTML = "<h2>⛓️ Blocks</h2>" +
+        chain.map(b => `<div class="block">${b.time}<br>${b.from} → ${b.to}: ${b.amount}<br>Hash: ${b.hash}</div>`).join("");
+    }
+
+    function exportCSV() {
+      const rows = [["Time", "From", "To", "Amount", "Hash"]];
+      chain.forEach(b => rows.push([b.time, b.from, b.to, b.amount, b.hash]));
+      const csv = rows.map(r => r.join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "microchain.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
   </script>
 </body>
 </html>
+
+
+Add this code to repository as manifest.JSON
+
+{
+  "name": "Microchain PWA",
+  "short_name": "Microchain",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#00ffcc",
+  "icons": []
+}
+ 
