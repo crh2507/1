@@ -1,9 +1,10 @@
+
 {
-  "name": "GuamCoin",
-  "short_name": "GuamCoin",
+  "name": "Microchain PWA",
+  "short_name": "Microchain",
   "start_url": "index.html",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#0055aa",
+  "background_color": "#121212",
+  "theme_color": "#00ffcc",
   "icons": []
 }
