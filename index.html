@@ -2,23 +2,26 @@
 <html lang="en">
 <head>
  <meta charset="UTF-8" />
- <title>Modular Wallet Explorer</title>
+ <title>Wallet Explorer PWA</title>
+ <meta name="viewport" content="width=device-width, initial-scale=1" />
+ <link rel="manifest" href="manifest.json" />
+ <meta name="theme-color" content="#0A74DA" />
  <style>
    body { font-family: Arial, sans-serif; padding: 2em; }
    .hidden { display: none; }
-   input, select, button {
+   input, select, button, textarea {
      padding: 0.5em;
      margin: 0.3em 0.6em 0.6em 0;
      font-size: 1em;
    }
    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
    th, td { border: 1px solid #ccc; padding: 0.5em; text-align: left; }
-   #transactionTable { margin-top: 1em; }
+   textarea { width: 100%; height: 150px; }
  </style>
 </head>
 <body>
 
- <h1>🔐 Wallet Login</h1>
+ <h1>🔐 Wallet Explorer (Offline-Ready)</h1>
 
  <div id="loginForm">
    <input type="text" id="loginInput" placeholder="Enter wallet phone (e.g. 6717770001)" />
@@ -43,12 +46,20 @@
        <option value="receive">Received</option>
      </select>
    </label>
-   <button onclick="exportHistory()">⬇️ Export to CSV</button>
+   <button onclick="exportHistory()">⬇️ Export CSV</button>
 
    <table id="transactionTable">
      <thead><tr><th>Type</th><th>Counterparty</th><th>Amount</th><th>Time</th></tr></thead>
      <tbody></tbody>
    </table>
+
+   <h3>📦 Wallet Snapshot</h3>
+   <button onclick="exportSnapshot()">🧠 Export Snapshot</button>
+   <textarea id="snapshotOutput" readonly></textarea>
+
+   <h3>🔁 Restore from Snapshot</h3>
+   <textarea id="snapshotInput" placeholder="Paste JSON here"></textarea>
+   <button onclick="importSnapshot()">Restore</button>
  </div>
 
  <script>
@@ -57,15 +68,13 @@
    function login() {
      const input = document.getElementById('loginInput').value.trim();
      if (!input.match(/^671777\d{4}$/)) {
-       alert('Enter a valid wallet phone number');
+       alert('Invalid wallet phone');
        return;
      }
-
      currentUser = input;
      document.getElementById('userPhone').textContent = currentUser;
      document.getElementById('loginForm').classList.add('hidden');
      document.getElementById('walletView').classList.remove('hidden');
-
      initWallet(currentUser);
      renderWallet(currentUser);
      renderHistory(currentUser);
@@ -75,15 +84,13 @@
      const key = 'wallet-' + phone;
      const logKey = key + '-logs';
      if (!localStorage.getItem(key)) {
-       const wallet = { phone, coins: 100, status: 'active' };
-       localStorage.setItem(key, JSON.stringify(wallet));
+       localStorage.setItem(key, JSON.stringify({ phone, coins: 100, status: 'active' }));
        localStorage.setItem(logKey, JSON.stringify([]));
      }
    }
 
    function getWallet(phone) {
-     const wallet = localStorage.getItem('wallet-' + phone);
-     return wallet ? JSON.parse(wallet) : null;
+     return JSON.parse(localStorage.getItem('wallet-' + phone) || '{}');
    }
 
    function saveWallet(wallet) {
@@ -91,52 +98,32 @@
    }
 
    function logTransaction(phone, entry) {
-     const key = 'wallet-' + phone + '-logs';
-     const logs = JSON.parse(localStorage.getItem(key) || '[]');
+     const logs = JSON.parse(localStorage.getItem('wallet-' + phone + '-logs') || '[]');
      logs.push(entry);
-     localStorage.setItem(key, JSON.stringify(logs));
+     localStorage.setItem('wallet-' + phone + '-logs', JSON.stringify(logs));
    }
 
    function sendCoins() {
-     const recipient = document.getElementById('recipientInput').value.trim();
+     const to = document.getElementById('recipientInput').value.trim();
      const amount = parseFloat(document.getElementById('amountInput').value.trim());
-
-     if (!recipient.match(/^671777\d{4}$/) || isNaN(amount) || amount <= 0) {
-       alert('Enter valid recipient and amount');
-       return;
+     if (!to.match(/^671777\d{4}$/) || isNaN(amount) || amount <= 0) {
+       alert('Invalid transfer details'); return;
      }
-
      const sender = getWallet(currentUser);
-     const receiver = getWallet(recipient) || { phone: recipient, coins: 100, status: 'new' };
-
-     if (sender.coins < amount) {
-       alert('Insufficient balance');
-       return;
-     }
+     const receiver = getWallet(to) || { phone: to, coins: 100, status: 'new' };
+     if (sender.coins < amount) { alert('Insufficient balance'); return; }
 
      sender.coins -= amount;
      receiver.coins += amount;
+     saveWallet(sender); saveWallet(receiver);
 
-     saveWallet(sender);
-     saveWallet(receiver);
-
-     logTransaction(currentUser, {
-       type: 'send',
-       to: recipient,
-       amount,
-       time: new Date().toISOString()
-     });
-
-     logTransaction(recipient, {
-       type: 'receive',
-       from: currentUser,
-       amount,
-       time: new Date().toISOString()
-     });
+     const now = new Date().toISOString();
+     logTransaction(currentUser, { type: 'send', to, amount, time: now });
+     logTransaction(to, { type: 'receive', from: currentUser, amount, time: now });
 
      renderWallet(currentUser);
      renderHistory(currentUser);
-     alert(`Sent ${amount} coins to ${recipient}`);
+     alert(`Sent ${amount} coins to ${to}`);
    }
 
    function renderWallet(phone) {
@@ -146,14 +133,12 @@
    }
 
    function renderHistory(phone) {
-     const key = 'wallet-' + phone + '-logs';
-     const logs = JSON.parse(localStorage.getItem(key) || '[]');
+     const logs = JSON.parse(localStorage.getItem('wallet-' + phone + '-logs') || '[]');
      const filter = document.getElementById('filterType').value;
-
      const tbody = document.querySelector('#transactionTable tbody');
      tbody.innerHTML = '';
 
-     logs.filter(log => filter === 'all' || log.type === filter).forEach(log => {
+     logs.filter(l => filter === 'all' || l.type === filter).forEach(log => {
        const row = document.createElement('tr');
        row.innerHTML = `
          <td>${log.type}</td>
@@ -166,27 +151,41 @@
    }
 
    function exportHistory() {
-     const key = 'wallet-' + currentUser + '-logs';
-     const logs = JSON.parse(localStorage.getItem(key) || '[]');
-
-     if (!logs.length) {
-       alert('No transaction history to export.');
-       return;
-     }
-
+     const logs = JSON.parse(localStorage.getItem('wallet-' + currentUser + '-logs') || '[]');
      let csv = 'type,counterparty,amount,time\n';
-     logs.forEach(log => {
-       const party = log.to || log.from;
-       csv += `${log.type},${party},${log.amount},"${new Date(log.time).toLocaleString()}"\n`;
+     logs.forEach(l => {
+       const party = l.to || l.from;
+       csv += `${l.type},${party},${l.amount},"${new Date(l.time).toLocaleString()}"\n`;
      });
+     const blob = new Blob([csv], { type: 'text/csv' });
+     const a = document.createElement('a');
+     a.href = URL.createObjectURL(blob);
+     a.download = `wallet-${currentUser}-history.csv`;
+     document.body.appendChild(a); a.click(); document.body.removeChild(a);
+   }
 
-     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-     const link = document.createElement('a');
-     link.href = URL.createObjectURL(blob);
-     link.download = `wallet-${currentUser}-history.csv`;
-     document.body.appendChild(link);
-     link.click();
-     document.body.removeChild(link);
+   function exportSnapshot() {
+     const wallet = getWallet(currentUser);
+     const logs = JSON.parse(localStorage.getItem('wallet-' + currentUser + '-logs') || '[]');
+     document.getElementById('snapshotOutput').value = JSON.stringify({ wallet, logs }, null, 2);
+   }
+
+   function importSnapshot() {
+     try {
+       const input = JSON.parse(document.getElementById('snapshotInput').value.trim());
+       saveWallet(input.wallet);
+       localStorage.setItem('wallet-' + input.wallet.phone + '-logs', JSON.stringify(input.logs));
+       alert('Snapshot restored');
+       if (input.wallet.phone === currentUser) {
+         renderWallet(currentUser);
+         renderHistory(currentUser);
+       }
+     } catch (e) { alert('Invalid snapshot format'); }
+   }
+
+   // Register Service Worker for offline support
+   if ('serviceWorker' in navigator) {
+     navigator.serviceWorker.register('sw.js').then(() => console.log('✅ Service Worker registered'));
    }
  </script>
 
