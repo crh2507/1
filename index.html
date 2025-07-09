@@ -71,6 +71,17 @@
        alert('Invalid wallet phone');
        return;
      }
+
+     const pinKey = 'wallet-' + input + '-pin';
+     if (localStorage.getItem(pinKey)) {
+       const enteredPin = prompt('Enter your 4-digit PIN');
+       const storedPin = atob(localStorage.getItem(pinKey));
+       if (enteredPin !== storedPin) {
+         alert('Incorrect PIN');
+         return;
+       }
+     }
+
      currentUser = input;
      document.getElementById('userPhone').textContent = currentUser;
      document.getElementById('loginForm').classList.add('hidden');
@@ -83,9 +94,17 @@
    function initWallet(phone) {
      const key = 'wallet-' + phone;
      const logKey = key + '-logs';
+     const pinKey = key + '-pin';
+
      if (!localStorage.getItem(key)) {
+       const pin = prompt('Set a 4-digit PIN for this wallet');
+       if (!pin || !pin.match(/^\d{4}$/)) {
+         alert('Invalid PIN. Wallet not created.');
+         return;
+       }
        localStorage.setItem(key, JSON.stringify({ phone, coins: 100, status: 'active' }));
        localStorage.setItem(logKey, JSON.stringify([]));
+       localStorage.setItem(pinKey, btoa(pin));
      }
    }
 
