@@ -1,206 +1,203 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
- <meta charset="UTF-8" />
- <title>Wallet Explorer PWA</title>
- <meta name="viewport" content="width=device-width, initial-scale=1" />
- <link rel="manifest" href="manifest.json" />
- <meta name="theme-color" content="#0A74DA" />
- <style>
-   body { font-family: Arial, sans-serif; padding: 2em; }
-   .hidden { display: none; }
-   input, select, button, textarea {
-     padding: 0.5em;
-     margin: 0.3em 0.6em 0.6em 0;
-     font-size: 1em;
-   }
-   table { width: 100%; border-collapse: collapse; margin-top: 1em; }
-   th, td { border: 1px solid #ccc; padding: 0.5em; text-align: left; }
-   textarea { width: 100%; height: 150px; }
- </style>
+  <meta charset="UTF-8" />
+  <title>Wallet Explorer PWA</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0A74DA" />
+  <style>
+    body { font-family: Arial, sans-serif; padding: 2em; }
+    .hidden { display: none; }
+    input, select, button, textarea {
+      padding: 0.5em;
+      margin: 0.3em 0.6em 0.6em 0;
+      font-size: 1em;
+    }
+    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+    th, td { border: 1px solid #ccc; padding: 0.5em; text-align: left; }
+    textarea { width: 100%; height: 150px; }
+  </style>
 </head>
 <body>
 
- <h1>🔐 Wallet Explorer (Offline-Ready)</h1>
+<h1>🔐 Wallet Explorer (Phase 13)</h1>
 
- <div id="loginForm">
-   <input type="text" id="loginInput" placeholder="Enter wallet phone (e.g. 6717770001)" />
-   <button onclick="login()">Login</button>
- </div>
+<div id="loginForm">
+  <input type="text" id="loginInput" placeholder="Enter wallet phone (e.g. 6717770001)" />
+  <button onclick="login()">Login</button>
+</div>
 
- <div id="walletView" class="hidden">
-   <h2>📱 Wallet: <span id="userPhone"></span></h2>
-   <p><strong>Balance:</strong> <span id="balanceDisplay"></span> coins</p>
-   <p><strong>Status:</strong> <span id="statusDisplay"></span></p>
+<div id="walletView" class="hidden">
+  <h2>📱 Wallet: <span id="userPhone"></span></h2>
+  <p><strong>Balance:</strong> <span id="balanceDisplay"></span> coins</p>
+  <p><strong>Status:</strong> <span id="statusDisplay"></span></p>
 
-   <h3>📤 Send Coins</h3>
-   <input type="text" id="recipientInput" placeholder="Recipient phone" />
-   <input type="number" id="amountInput" placeholder="Amount" />
-   <button onclick="sendCoins()">Send</button>
+  <h3>👥 Nickname</h3>
+  <input type="text" id="nicknameInput" placeholder="Your nickname" />
+  <button onclick="saveNickname()">Save Nickname</button>
 
-   <h3>📚 Transaction History</h3>
-   <label>Filter:
-     <select id="filterType" onchange="renderHistory(currentUser)">
-       <option value="all">All</option>
-       <option value="send">Sent</option>
-       <option value="receive">Received</option>
-     </select>
-   </label>
-   <button onclick="exportHistory()">⬇️ Export CSV</button>
+  <h3>🔐 Change PIN</h3>
+  <input type="text" id="newPinInput" placeholder="New 4-digit PIN" />
+  <button onclick="resetPin()">Change PIN</button>
 
-   <table id="transactionTable">
-     <thead><tr><th>Type</th><th>Counterparty</th><th>Amount</th><th>Time</th></tr></thead>
-     <tbody></tbody>
-   </table>
+  <h3>📤 Send Coins</h3>
+  <input type="text" id="recipientInput" placeholder="Recipient phone" />
+  <input type="text" id="recipientAlias" placeholder="Optional nickname" />
+  <input type="number" id="amountInput" placeholder="Amount" />
+  <button onclick="sendCoins()">Send</button>
 
-   <h3>📦 Wallet Snapshot</h3>
-   <button onclick="exportSnapshot()">🧠 Export Snapshot</button>
-   <textarea id="snapshotOutput" readonly></textarea>
+  <h3>📚 Transaction History</h3>
+  <label>Filter:
+    <select id="filterType" onchange="renderHistory(currentUser)">
+      <option value="all">All</option>
+      <option value="send">Sent</option>
+      <option value="receive">Received</option>
+    </select>
+  </label>
+  <button onclick="exportHistory()">⬇️ Export CSV</button>
 
-   <h3>🔁 Restore from Snapshot</h3>
-   <textarea id="snapshotInput" placeholder="Paste JSON here"></textarea>
-   <button onclick="importSnapshot()">Restore</button>
- </div>
+  <table id="transactionTable">
+    <thead><tr><th>Type</th><th>Counterparty</th><th>Amount</th><th>Time</th></tr></thead>
+    <tbody></tbody>
+  </table>
 
- <script>
-   let currentUser = null;
+  <h3>📦 Snapshot</h3>
+  <button onclick="exportSnapshot()">🧠 Export Snapshot</button>
+  <textarea id="snapshotOutput" readonly></textarea>
 
-   function login() {
-     const input = document.getElementById('loginInput').value.trim();
-     if (!input.match(/^671777\d{4}$/)) {
-       alert('Invalid wallet phone'); return;
-     }
+  <h3>🔁 Restore</h3>
+  <textarea id="snapshotInput" placeholder="Paste JSON snapshot here"></textarea>
+  <button onclick="importSnapshot()">Restore</button>
+</div>
 
-     const walletKey = 'wallet-' + input;
-     const pinKey = walletKey + '-pin';
+<script>
+  let currentUser = null;
+  const channel = new BroadcastChannel('wallet-sync');
 
-     // If wallet doesn't exist, allow self-registration
-     if (!localStorage.getItem(walletKey)) {
-       if (confirm('No wallet found. Create a new one for ' + input + '?')) {
-         const newPin = prompt('Set a 4-digit PIN');
-         if (!newPin || !newPin.match(/^\d{4}$/)) {
-           alert('Invalid PIN. Registration cancelled.'); return;
-         }
-         localStorage.setItem(walletKey, JSON.stringify({ phone: input, coins: 100, status: 'active' }));
-         localStorage.setItem(walletKey + '-logs', JSON.stringify([]));
-         localStorage.setItem(pinKey, btoa(newPin));
-         alert('Wallet created successfully!');
-       } else { return; }
-     }
+  channel.onmessage = (event) => {
+    if (event.data === 'update-' + currentUser) {
+      renderWallet(currentUser);
+      renderHistory(currentUser);
+    }
+  };
 
-     // Ask for PIN regardless
-     const enteredPin = prompt('Enter your 4-digit PIN');
-     const storedPin = atob(localStorage.getItem(pinKey));
-     if (enteredPin !== storedPin) {
-       alert('Incorrect PIN'); return;
-     }
+  function notifyLocal(msg) {
+    if (Notification.permission === 'granted') {
+      new Notification(msg);
+    }
+  }
 
-     currentUser = input;
-     document.getElementById('userPhone').textContent = currentUser;
-     document.getElementById('loginForm').classList.add('hidden');
-     document.getElementById('walletView').classList.remove('hidden');
-     renderWallet(currentUser);
-     renderHistory(currentUser);
-   }
+  function login() {
+    const input = document.getElementById('loginInput').value.trim();
+    if (!input.match(/^671777\d{4}$/)) {
+      alert('Invalid wallet phone'); return;
+    }
 
-   function getWallet(phone) {
-     return JSON.parse(localStorage.getItem('wallet-' + phone) || '{}');
-   }
+    const walletKey = 'wallet-' + input;
+    const pinKey = walletKey + '-pin';
 
-   function saveWallet(wallet) {
-     localStorage.setItem('wallet-' + wallet.phone, JSON.stringify(wallet));
-   }
+    if (!localStorage.getItem(walletKey)) {
+      if (confirm('No wallet found. Register one now?')) {
+        const newPin = prompt('Set a 4-digit PIN');
+        if (!newPin || !newPin.match(/^\d{4}$/)) {
+          alert('Invalid PIN'); return;
+        }
+        const nickname = prompt('Set your nickname (optional):') || '';
+        localStorage.setItem(walletKey, JSON.stringify({ phone: input, coins: 100, status: 'active', nickname }));
+        localStorage.setItem(walletKey + '-logs', JSON.stringify([]));
+        localStorage.setItem(pinKey, btoa(newPin));
+        alert('Wallet created!');
+      } else return;
+    }
 
-   function logTransaction(phone, entry) {
-     const logs = JSON.parse(localStorage.getItem('wallet-' + phone + '-logs') || '[]');
-     logs.push(entry);
-     localStorage.setItem('wallet-' + phone + '-logs', JSON.stringify(logs));
-   }
+    const enteredPin = prompt('Enter your 4-digit PIN');
+    const storedPin = atob(localStorage.getItem(pinKey));
+    if (enteredPin !== storedPin) {
+      alert('Incorrect PIN'); return;
+    }
 
-   function sendCoins() {
-     const to = document.getElementById('recipientInput').value.trim();
-     const amount = parseFloat(document.getElementById('amountInput').value.trim());
-     if (!to.match(/^671777\d{4}$/) || isNaN(amount) || amount <= 0) {
-       alert('Invalid transfer details'); return;
-     }
-     const sender = getWallet(currentUser);
-     const receiver = getWallet(to) || { phone: to, coins: 100, status: 'new' };
-     if (sender.coins < amount) { alert('Insufficient balance'); return; }
+    currentUser = input;
+    document.getElementById('userPhone').textContent = currentUser;
+    document.getElementById('loginForm').classList.add('hidden');
+    document.getElementById('walletView').classList.remove('hidden');
+    renderWallet(currentUser);
+    renderHistory(currentUser);
+  }
 
-     sender.coins -= amount;
-     receiver.coins += amount;
-     saveWallet(sender); saveWallet(receiver);
+  function getWallet(phone) {
+    return JSON.parse(localStorage.getItem('wallet-' + phone) || '{}');
+  }
 
-     const now = new Date().toISOString();
-     logTransaction(currentUser, { type: 'send', to, amount, time: now });
-     logTransaction(to, { type: 'receive', from: currentUser, amount, time: now });
+  function saveWallet(wallet) {
+    localStorage.setItem('wallet-' + wallet.phone, JSON.stringify(wallet));
+  }
 
-     renderWallet(currentUser);
-     renderHistory(currentUser);
-     alert(`Sent ${amount} coins to ${to}`);
-   }
+  function logTransaction(phone, entry) {
+    const logs = JSON.parse(localStorage.getItem('wallet-' + phone + '-logs') || '[]');
+    logs.push(entry);
+    localStorage.setItem('wallet-' + phone + '-logs', JSON.stringify(logs));
+  }
 
-   function renderWallet(phone) {
-     const wallet = getWallet(phone);
-     document.getElementById('balanceDisplay').textContent = wallet.coins;
-     document.getElementById('statusDisplay').textContent = wallet.status;
-   }
+  function sendCoins() {
+    const to = document.getElementById('recipientInput').value.trim();
+    const alias = document.getElementById('recipientAlias').value.trim();
+    const amount = parseFloat(document.getElementById('amountInput').value.trim());
+    if (!to.match(/^671777\d{4}$/) || isNaN(amount) || amount <= 0) {
+      alert('Invalid transfer'); return;
+    }
+    const sender = getWallet(currentUser);
+    const receiver = getWallet(to) || { phone: to, coins: 100, status: 'new', nickname: alias };
 
-   function renderHistory(phone) {
-     const logs = JSON.parse(localStorage.getItem('wallet-' + phone + '-logs') || '[]');
-     const filter = document.getElementById('filterType').value;
-     const tbody = document.querySelector('#transactionTable tbody');
-     tbody.innerHTML = '';
+    if (sender.coins < amount) { alert('Insufficient balance'); return; }
 
-     logs.filter(l => filter === 'all' || l.type === filter).forEach(log => {
-       const row = document.createElement('tr');
-       row.innerHTML = `
-         <td>${l.type}</td>
-         <td>${l.to || l.from}</td>
-         <td>${l.amount}</td>
-         <td>${new Date(l.time).toLocaleString()}</td>
-       `;
-       tbody.appendChild(row);
-     });
-   }
+    sender.coins -= amount;
+    receiver.coins += amount;
+    saveWallet(sender);
+    saveWallet(receiver);
 
-   function exportHistory() {
-     const logs = JSON.parse(localStorage.getItem('wallet-' + currentUser + '-logs') || '[]');
-     let csv = 'type,counterparty,amount,time\n';
-     logs.forEach(l => {
-       const party = l.to || l.from;
-       csv += `${l.type},${party},${l.amount},"${new Date(l.time).toLocaleString()}"\n`;
-     });
-     const blob = new Blob([csv], { type: 'text/csv' });
-     const a = document.createElement('a');
-     a.href = URL.createObjectURL(blob);
-     a.download = `wallet-${currentUser}-history.csv`;
-     document.body.appendChild(a); a.click(); document.body.removeChild(a);
-   }
+    const now = new Date().toISOString();
+    logTransaction(currentUser, { type: 'send', to, amount, time: now });
+    logTransaction(to, { type: 'receive', from: currentUser, amount, time: now });
 
-   function exportSnapshot() {
-     const wallet = getWallet(currentUser);
-     const logs = JSON.parse(localStorage.getItem('wallet-' + currentUser + '-logs') || '[]');
-     document.getElementById('snapshotOutput').value = JSON.stringify({ wallet, logs }, null, 2);
-   }
+    renderWallet(currentUser);
+    renderHistory(currentUser);
+    notifyLocal(`Sent ${amount} coins to ${receiver.nickname || to}`);
+    channel.postMessage('update-' + currentUser);
+    alert(`Sent ${amount} coins to ${to}`);
+  }
 
-   function importSnapshot() {
-     try {
-       const input = JSON.parse(document.getElementById('snapshotInput').value.trim());
-       saveWallet(input.wallet);
-       localStorage.setItem('wallet-' + input.wallet.phone + '-logs', JSON.stringify(input.logs));
-       alert('Snapshot restored');
-       if (input.wallet.phone === currentUser) {
-         renderWallet(currentUser);
-         renderHistory(currentUser);
-       }
-     } catch (e) { alert('Invalid snapshot format'); }
-   }
+  function renderWallet(phone) {
+    const wallet = getWallet(phone);
+    document.getElementById('balanceDisplay').textContent = wallet.coins;
+    document.getElementById('statusDisplay').textContent = wallet.status;
+    document.getElementById('nicknameInput').value = wallet.nickname || '';
+  }
 
-   if ('serviceWorker' in navigator) {
-     navigator.serviceWorker.register('sw.js').then(() => console.log('✅ Service Worker registered'));
-   }
- </script>
+  function renderHistory(phone) {
+    const logs = JSON.parse(localStorage.getItem('wallet-' + phone + '-logs') || '[]');
+    const filter = document.getElementById('filterType').value;
+    const tbody = document.querySelector('#transactionTable tbody');
+    tbody.innerHTML = '';
 
-</body>
-</html>
+    logs.filter(l => filter === 'all' || l.type === filter).forEach(log => {
+      const counter = log.to || log.from;
+      const party = getWallet(counter)?.nickname || counter;
+      const row = document.createElement('tr');
+      row.innerHTML = `<td>${log.type}</td><td>${party}</td><td>${log.amount}</td><td>${new Date(log.time).toLocaleString()}</td>`;
+      tbody.appendChild(row);
+    });
+  }
+
+  function exportHistory() {
+    const logs = JSON.parse(localStorage.getItem('wallet-' + currentUser + '-logs') || '[]');
+    let csv = 'type,counterparty,amount,time\n';
+    logs.forEach(l => {
+      const party = l.to || l.from;
+      csv += `${l.type},${party},${l.amount},"${new Date(l.time).toLocaleString()}"\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `wallet-${currentUser}-history.csv`;
+    document.body.appendChild
