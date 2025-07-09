@@ -68,44 +68,39 @@
    function login() {
      const input = document.getElementById('loginInput').value.trim();
      if (!input.match(/^671777\d{4}$/)) {
-       alert('Invalid wallet phone');
-       return;
+       alert('Invalid wallet phone'); return;
      }
 
-     const pinKey = 'wallet-' + input + '-pin';
-     if (localStorage.getItem(pinKey)) {
-       const enteredPin = prompt('Enter your 4-digit PIN');
-       const storedPin = atob(localStorage.getItem(pinKey));
-       if (enteredPin !== storedPin) {
-         alert('Incorrect PIN');
-         return;
-       }
+     const walletKey = 'wallet-' + input;
+     const pinKey = walletKey + '-pin';
+
+     // If wallet doesn't exist, allow self-registration
+     if (!localStorage.getItem(walletKey)) {
+       if (confirm('No wallet found. Create a new one for ' + input + '?')) {
+         const newPin = prompt('Set a 4-digit PIN');
+         if (!newPin || !newPin.match(/^\d{4}$/)) {
+           alert('Invalid PIN. Registration cancelled.'); return;
+         }
+         localStorage.setItem(walletKey, JSON.stringify({ phone: input, coins: 100, status: 'active' }));
+         localStorage.setItem(walletKey + '-logs', JSON.stringify([]));
+         localStorage.setItem(pinKey, btoa(newPin));
+         alert('Wallet created successfully!');
+       } else { return; }
+     }
+
+     // Ask for PIN regardless
+     const enteredPin = prompt('Enter your 4-digit PIN');
+     const storedPin = atob(localStorage.getItem(pinKey));
+     if (enteredPin !== storedPin) {
+       alert('Incorrect PIN'); return;
      }
 
      currentUser = input;
      document.getElementById('userPhone').textContent = currentUser;
      document.getElementById('loginForm').classList.add('hidden');
      document.getElementById('walletView').classList.remove('hidden');
-     initWallet(currentUser);
      renderWallet(currentUser);
      renderHistory(currentUser);
-   }
-
-   function initWallet(phone) {
-     const key = 'wallet-' + phone;
-     const logKey = key + '-logs';
-     const pinKey = key + '-pin';
-
-     if (!localStorage.getItem(key)) {
-       const pin = prompt('Set a 4-digit PIN for this wallet');
-       if (!pin || !pin.match(/^\d{4}$/)) {
-         alert('Invalid PIN. Wallet not created.');
-         return;
-       }
-       localStorage.setItem(key, JSON.stringify({ phone, coins: 100, status: 'active' }));
-       localStorage.setItem(logKey, JSON.stringify([]));
-       localStorage.setItem(pinKey, btoa(pin));
-     }
    }
 
    function getWallet(phone) {
@@ -160,10 +155,10 @@
      logs.filter(l => filter === 'all' || l.type === filter).forEach(log => {
        const row = document.createElement('tr');
        row.innerHTML = `
-         <td>${log.type}</td>
-         <td>${log.to || log.from}</td>
-         <td>${log.amount}</td>
-         <td>${new Date(log.time).toLocaleString()}</td>
+         <td>${l.type}</td>
+         <td>${l.to || l.from}</td>
+         <td>${l.amount}</td>
+         <td>${new Date(l.time).toLocaleString()}</td>
        `;
        tbody.appendChild(row);
      });
@@ -202,7 +197,6 @@
      } catch (e) { alert('Invalid snapshot format'); }
    }
 
-   // Register Service Worker for offline support
    if ('serviceWorker' in navigator) {
      navigator.serviceWorker.register('sw.js').then(() => console.log('✅ Service Worker registered'));
    }
