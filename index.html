@@ -1,111 +1,194 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Microchain PWA</title>
-  <link rel="manifest" href="manifest.json" />
-  <style>
-    body { font-family: sans-serif; background: #121212; color: #00ffcc; padding: 20px; }
-    input, button { margin: 5px; padding: 10px; background: #1e1e1e; color: #00ffcc; border: 1px solid #00ffcc; }
-    button:hover { background: #00ffcc; color: #121212; }
-    .block, .wallet { background: #1e1e1e; padding: 10px; margin-top: 10px; border-left: 4px solid #00ffcc; }
-  </style>
+ <meta charset="UTF-8" />
+ <title>Modular Wallet Explorer</title>
+ <style>
+   body { font-family: Arial, sans-serif; padding: 2em; }
+   .hidden { display: none; }
+   input, select, button {
+     padding: 0.5em;
+     margin: 0.3em 0.6em 0.6em 0;
+     font-size: 1em;
+   }
+   table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+   th, td { border: 1px solid #ccc; padding: 0.5em; text-align: left; }
+   #transactionTable { margin-top: 1em; }
+ </style>
 </head>
 <body>
-  <h1>🔗 Microchain PWA</h1>
-  <input type="text" id="from" placeholder="Sender" />
-  <input type="text" id="to" placeholder="Receiver" />
-  <input type="number" id="amount" placeholder="Amount" />
-  <button onclick="send()">Send Tokens</button>
-  <button onclick="exportCSV()">📤 Export CSV</button>
-  <div id="wallets"></div>
-  <div id="blocks"></div>
 
-  <script>
-    let db;
-    let chain = [];
-    let wallets = {};
+ <h1>🔐 Wallet Login</h1>
 
-    const request = indexedDB.open("microchainDB", 1);
-    request.onupgradeneeded = e => {
-      db = e.target.result;
-      db.createObjectStore("blocks", { keyPath: "hash" });
-    };
-    request.onsuccess = e => {
-      db = e.target.result;
-      loadChain();
-    };
+ <div id="loginForm">
+   <input type="text" id="loginInput" placeholder="Enter wallet phone (e.g. 6717770001)" />
+   <button onclick="login()">Login</button>
+ </div>
 
-    async function sha256(msg) {
-      const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(msg));
-      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-    }
+ <div id="walletView" class="hidden">
+   <h2>📱 Wallet: <span id="userPhone"></span></h2>
+   <p><strong>Balance:</strong> <span id="balanceDisplay"></span> coins</p>
+   <p><strong>Status:</strong> <span id="statusDisplay"></span></p>
 
-    async function send() {
-      const from = document.getElementById('from').value.trim();
-      const to = document.getElementById('to').value.trim();
-      const amount = parseFloat(document.getElementById('amount').value);
-      if (!from || !to || isNaN(amount) || amount <= 0) return alert("Fill all fields.");
+   <h3>📤 Send Coins</h3>
+   <input type="text" id="recipientInput" placeholder="Recipient phone" />
+   <input type="number" id="amountInput" placeholder="Amount" />
+   <button onclick="sendCoins()">Send</button>
 
-      wallets[from] = wallets[from] || 1000;
-      wallets[to] = wallets[to] || 1000;
-      if (wallets[from] < amount) return alert("Insufficient balance.");
+   <h3>📚 Transaction History</h3>
+   <label>Filter:
+     <select id="filterType" onchange="renderHistory(currentUser)">
+       <option value="all">All</option>
+       <option value="send">Sent</option>
+       <option value="receive">Received</option>
+     </select>
+   </label>
+   <button onclick="exportHistory()">⬇️ Export to CSV</button>
 
-      wallets[from] -= amount;
-      wallets[to] += amount;
+   <table id="transactionTable">
+     <thead><tr><th>Type</th><th>Counterparty</th><th>Amount</th><th>Time</th></tr></thead>
+     <tbody></tbody>
+   </table>
+ </div>
 
-      const prev = chain.length ? chain[chain.length - 1].hash : "0";
-      const block = { time: new Date().toISOString(), from, to, amount, prev };
-      block.hash = await sha256(JSON.stringify(block));
-      chain.push(block);
+ <script>
+   let currentUser = null;
 
-      const tx = db.transaction("blocks", "readwrite");
-      tx.objectStore("blocks").add(block);
+   function login() {
+     const input = document.getElementById('loginInput').value.trim();
+     if (!input.match(/^671777\d{4}$/)) {
+       alert('Enter a valid wallet phone number');
+       return;
+     }
 
-      render();
-      document.getElementById('from').value = "";
-      document.getElementById('to').value = "";
-      document.getElementById('amount').value = "";
-    }
+     currentUser = input;
+     document.getElementById('userPhone').textContent = currentUser;
+     document.getElementById('loginForm').classList.add('hidden');
+     document.getElementById('walletView').classList.remove('hidden');
 
-    function loadChain() {
-      const tx = db.transaction("blocks", "readonly");
-      const store = tx.objectStore("blocks");
-      const req = store.openCursor();
-      req.onsuccess = e => {
-        const cursor = e.target.result;
-        if (cursor) {
-          const block = cursor.value;
-          chain.push(block);
-          wallets[block.from] = (wallets[block.from] || 1000) - block.amount;
-          wallets[block.to] = (wallets[block.to] || 1000) + block.amount;
-          cursor.continue();
-        } else {
-          render();
-        }
-      };
-    }
+     initWallet(currentUser);
+     renderWallet(currentUser);
+     renderHistory(currentUser);
+   }
 
-    function render() {
-      document.getElementById("wallets").innerHTML = "<h2>💰 Wallets</h2>" +
-        Object.entries(wallets).map(([k,v]) => `<div class="wallet">${k}: ${v.toFixed(2)}</div>`).join("");
-      document.getElementById("blocks").innerHTML = "<h2>⛓️ Blocks</h2>" +
-        chain.map(b => `<div class="block">${b.time}<br>${b.from} → ${b.to}: ${b.amount}<br>Hash: ${b.hash}</div>`).join("");
-    }
+   function initWallet(phone) {
+     const key = 'wallet-' + phone;
+     const logKey = key + '-logs';
+     if (!localStorage.getItem(key)) {
+       const wallet = { phone, coins: 100, status: 'active' };
+       localStorage.setItem(key, JSON.stringify(wallet));
+       localStorage.setItem(logKey, JSON.stringify([]));
+     }
+   }
 
-    function exportCSV() {
-      const rows = [["Time", "From", "To", "Amount", "Hash"]];
-      chain.forEach(b => rows.push([b.time, b.from, b.to, b.amount, b.hash]));
-      const csv = rows.map(r => r.join(",")).join("\n");
-      const blob = new Blob([csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "microchain.csv";
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-  </script>
+   function getWallet(phone) {
+     const wallet = localStorage.getItem('wallet-' + phone);
+     return wallet ? JSON.parse(wallet) : null;
+   }
+
+   function saveWallet(wallet) {
+     localStorage.setItem('wallet-' + wallet.phone, JSON.stringify(wallet));
+   }
+
+   function logTransaction(phone, entry) {
+     const key = 'wallet-' + phone + '-logs';
+     const logs = JSON.parse(localStorage.getItem(key) || '[]');
+     logs.push(entry);
+     localStorage.setItem(key, JSON.stringify(logs));
+   }
+
+   function sendCoins() {
+     const recipient = document.getElementById('recipientInput').value.trim();
+     const amount = parseFloat(document.getElementById('amountInput').value.trim());
+
+     if (!recipient.match(/^671777\d{4}$/) || isNaN(amount) || amount <= 0) {
+       alert('Enter valid recipient and amount');
+       return;
+     }
+
+     const sender = getWallet(currentUser);
+     const receiver = getWallet(recipient) || { phone: recipient, coins: 100, status: 'new' };
+
+     if (sender.coins < amount) {
+       alert('Insufficient balance');
+       return;
+     }
+
+     sender.coins -= amount;
+     receiver.coins += amount;
+
+     saveWallet(sender);
+     saveWallet(receiver);
+
+     logTransaction(currentUser, {
+       type: 'send',
+       to: recipient,
+       amount,
+       time: new Date().toISOString()
+     });
+
+     logTransaction(recipient, {
+       type: 'receive',
+       from: currentUser,
+       amount,
+       time: new Date().toISOString()
+     });
+
+     renderWallet(currentUser);
+     renderHistory(currentUser);
+     alert(`Sent ${amount} coins to ${recipient}`);
+   }
+
+   function renderWallet(phone) {
+     const wallet = getWallet(phone);
+     document.getElementById('balanceDisplay').textContent = wallet.coins;
+     document.getElementById('statusDisplay').textContent = wallet.status;
+   }
+
+   function renderHistory(phone) {
+     const key = 'wallet-' + phone + '-logs';
+     const logs = JSON.parse(localStorage.getItem(key) || '[]');
+     const filter = document.getElementById('filterType').value;
+
+     const tbody = document.querySelector('#transactionTable tbody');
+     tbody.innerHTML = '';
+
+     logs.filter(log => filter === 'all' || log.type === filter).forEach(log => {
+       const row = document.createElement('tr');
+       row.innerHTML = `
+         <td>${log.type}</td>
+         <td>${log.to || log.from}</td>
+         <td>${log.amount}</td>
+         <td>${new Date(log.time).toLocaleString()}</td>
+       `;
+       tbody.appendChild(row);
+     });
+   }
+
+   function exportHistory() {
+     const key = 'wallet-' + currentUser + '-logs';
+     const logs = JSON.parse(localStorage.getItem(key) || '[]');
+
+     if (!logs.length) {
+       alert('No transaction history to export.');
+       return;
+     }
+
+     let csv = 'type,counterparty,amount,time\n';
+     logs.forEach(log => {
+       const party = log.to || log.from;
+       csv += `${log.type},${party},${log.amount},"${new Date(log.time).toLocaleString()}"\n`;
+     });
+
+     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+     const link = document.createElement('a');
+     link.href = URL.createObjectURL(blob);
+     link.download = `wallet-${currentUser}-history.csv`;
+     document.body.appendChild(link);
+     link.click();
+     document.body.removeChild(link);
+   }
+ </script>
+
 </body>
 </html>
