@@ -8,7 +8,8 @@
    body { font-family: sans-serif; padding: 2em; max-width: 400px; margin: auto; }
    input, button { margin: 0.5em 0; padding: 0.5em; width: 100%; }
    .hidden { display: none; }
-   .user-list { font-size: 0.9em; background: #f4f4f4; padding: 0.5em; border-radius: 6px; }
+   .user-list { font-size: 0.9em; background: #f4f4f4; padding: 0.5em; border-radius: 6px; margin-top: 1em; }
+   #notifications { font-size: 0.9em; margin-top: 1em; transition: opacity 0.5s ease; }
  </style>
 </head>
 <body>
@@ -24,72 +25,156 @@
  <div id="wallet" class="hidden">
    <p>Welcome, <span id="user"></span></p>
    <p>Balance: <span id="balance">0</span> tokens</p>
-   <p>Trust Score: <span id="trust">Not rated</span></p>
+   <p>Trust Level: <span id="trust">Unknown</span></p>
+   <p>Credit Limit: <span id="credit">0</span> tokens</p>
    <input id="recipient" placeholder="Send to nickname or phone" />
    <input id="amount" type="number" placeholder="Amount" />
    <button id="send">Send Tokens</button>
    <p id="status"></p>
    <h4>🌐 Registered Users</h4>
    <div id="users" class="user-list"></div>
+   <div id="notifications"></div>
  </div>
 
  <script>
-   const users = {}; // { phone: { pin, nickname, balance, trust } }
+   let db;
+   const users = {};
    let currentUser = null;
+   const queue = [];
+   let showing = false;
 
-   function updateUserList() {
-     const list = Object.values(users).map(u => `🔹 ${u.nickname || 'Unnamed'} (${u.phone})`).join('<br>');
-     document.getElementById('users').innerHTML = list || 'No users yet.';
+   // Notification queue
+   function notify(msg) {
+     queue.push(msg);
+     if (!showing) showNext();
    }
 
-   document.getElementById('register').onclick = () => {
-     const phone = document.getElementById('phone').value.trim();
-     const pin = document.getElementById('pin').value.trim();
-     const nickname = document.getElementById('nickname').value.trim();
+   function showNext() {
+     if (queue.length === 0) {
+       showing = false;
+       return;
+     }
+     showing = true;
+     const msg = queue.shift();
+     const el = document.getElementById("notifications");
+     el.textContent = msg;
+     el.style.opacity = 1;
+     setTimeout(() => {
+       el.style.opacity = 0;
+       setTimeout(showNext, 500);
+     }, 3000);
+   }
 
-     if (!phone || !pin || !nickname) return alert('Fill all fields');
+   // IndexedDB setup
+   const request = indexedDB.open("walletDB", 1);
 
-     // Check for nickname conflict
+   request.onupgradeneeded = event => {
+     db = event.target.result;
+     const store = db.createObjectStore("users", { keyPath: "phone" });
+     store.createIndex("nickname", "nickname", { unique: true });
+   };
+
+   request.onsuccess = event => {
+     db = event.target.result;
+     loadUsers();
+   };
+
+   function saveUser(user) {
+     const tx = db.transaction("users", "readwrite");
+     tx.objectStore("users").put(user);
+   }
+
+   function loadUsers() {
+     const tx = db.transaction("users", "readonly");
+     const store = tx.objectStore("users");
+     const req = store.getAll();
+     req.onsuccess = () => {
+       req.result.forEach(u => users[u.phone] = u);
+       updateUserList();
+     };
+   }
+
+   // UI Hooks
+   document.getElementById("register").onclick = () => {
+     const nickname = document.getElementById("nickname").value.trim();
+     const phone = document.getElementById("phone").value.trim();
+     const pin = document.getElementById("pin").value.trim();
+
+     if (!nickname || !phone || !pin) return alert("Fill all fields");
+
+     // Nickname conflict check
      if (Object.values(users).some(u => u.nickname === nickname && u.phone !== phone)) {
-       return alert('Nickname already taken');
+       return alert("Nickname already taken");
      }
 
-     if (!users[phone]) {
-       users[phone] = { pin, nickname, balance: 100, trust: '🌱 Seedling' };
-     } else if (users[phone].pin !== pin) {
-       return alert('Incorrect PIN');
+     let user = users[phone];
+     if (!user) {
+       user = {
+         phone, pin, nickname,
+         balance: 100,
+         trust: "🌱 Seedling",
+       };
+     } else if (user.pin !== pin) {
+       return alert("Incorrect PIN");
+     } else {
+       user.nickname = nickname; // Update nickname if changed
      }
 
+     users[phone] = user;
      currentUser = phone;
-     const user = users[phone];
-     document.getElementById('user').textContent = user.nickname;
-     document.getElementById('balance').textContent = user.balance;
-     document.getElementById('trust').textContent = user.trust;
-     document.getElementById('auth').classList.add('hidden');
-     document.getElementById('wallet').classList.remove('hidden');
+     saveUser(user);
+
+     renderWallet(user);
      updateUserList();
    };
 
-   document.getElementById('send').onclick = () => {
-     const input = document.getElementById('recipient').value.trim();
-     const amount = parseInt(document.getElementById('amount').value);
-     const sender = users[currentUser];
+   function renderWallet(user) {
+     document.getElementById("auth").classList.add("hidden");
+     document.getElementById("wallet").classList.remove("hidden");
+     document.getElementById("user").textContent = user.nickname;
+     document.getElementById("balance").textContent = user.balance;
+     document.getElementById("trust").textContent = user.trust;
+     document.getElementById("credit").textContent = calculateCredit(user);
+   }
 
-     if (!input || isNaN(amount) || amount <= 0) return alert('Valid input required');
-     if (sender.balance < amount) return alert('Insufficient balance');
+   function updateUserList() {
+     const list = Object.values(users).map(u => `🔹 ${u.nickname} (${u.phone})`).join("<br>");
+     document.getElementById("users").innerHTML = list || "No users yet.";
+   }
+
+   function calculateCredit(user) {
+     const base = 50;
+     const trustFactor = user.trust === "🌱 Seedling" ? 1 : 2;
+     return base * trustFactor;
+   }
+
+   document.getElementById("send").onclick = () => {
+     const input = document.getElementById("recipient").value.trim();
+     const amount = parseInt(document.getElementById("amount").value);
+     const sender = users[currentUser];
+     const creditLimit = calculateCredit(sender);
+
+     if (!input || isNaN(amount) || amount <= 0) return alert("Valid input required");
+     if (sender.balance < amount) return alert("Insufficient balance");
+     if (amount > creditLimit) return notify(`❌ Amount exceeds credit limit (${creditLimit})`);
 
      const recipientEntry = Object.entries(users).find(([p, u]) =>
        p === input || u.nickname === input
      );
 
-     if (!recipientEntry) return alert('Recipient not found');
+     if (!recipientEntry) return alert("Recipient not found");
      const [recipientPhone, recipient] = recipientEntry;
 
      sender.balance -= amount;
      recipient.balance += amount;
+     users[currentUser] = sender;
+     users[recipientPhone] = recipient;
+     saveUser(sender);
+     saveUser(recipient);
 
-     document.getElementById('balance').textContent = sender.balance;
-     document.getElementById('status').textContent = `✅ Sent ${amount} tokens to ${recipient.nickname}`;
+     document.getElementById("balance").textContent = sender.balance;
+     document.getElementById("status").textContent = `✅ Sent ${amount} tokens to ${recipient.nickname}`;
+     notify(`✔️ ${amount} tokens sent to ${recipient.nickname}`);
      updateUserList();
    };
  </script>
