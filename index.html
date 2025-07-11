@@ -1,202 +1,69 @@
-<!-- Phase 14: Trust + Credit + Graph + Notifications -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Wallet Explorer PWA</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="manifest" href="manifest.json" />
-  <meta name="theme-color" content="#0A74DA" />
-  <style>
-    body { font-family: Arial, sans-serif; padding: 2em; }
-    .hidden { display: none; }
-    input, select, button, textarea {
-      padding: 0.5em; margin: 0.3em 0.6em 0.6em 0; font-size: 1em;
-    }
-    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
-    th, td { border: 1px solid #ccc; padding: 0.5em; text-align: left; }
-    textarea { width: 100%; height: 150px; }
-    canvas { margin-top: 1em; max-width: 100%; }
-  </style>
+ <meta charset="UTF-8" />
+ <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+ <title>Phone Wallet PWA</title>
+ <style>
+   body { font-family: sans-serif; padding: 2em; }
+   input, button { margin: 0.5em 0; padding: 0.5em; width: 100%; }
+   .hidden { display: none; }
+ </style>
 </head>
 <body>
+ <h2>📲 Phone Wallet</h2>
+ <div id="auth">
+   <input id="phone" placeholder="Enter phone number" />
+   <input id="pin" type="password" placeholder="Enter PIN" />
+   <button id="register">Register / Login</button>
+ </div>
 
-<h1>🌐 Wallet Explorer (Phase 14)</h1>
+ <div id="wallet" class="hidden">
+   <p>Welcome, <span id="user"></span></p>
+   <p>Balance: <span id="balance">0</span> tokens</p>
+   <input id="recipient" placeholder="Recipient phone number" />
+   <input id="amount" type="number" placeholder="Amount to send" />
+   <button id="send">Send Tokens</button>
+   <p id="status"></p>
+ </div>
 
-<div id="loginForm">
-  <input type="text" id="loginInput" placeholder="Enter wallet phone (e.g. 6717770001)" />
-  <button onclick="login()">Login</button>
-</div>
+ <script>
+   const users = {}; // Simulated user store
+   let currentUser = null;
 
-<div id="walletView" class="hidden">
-  <h2>📱 Wallet: <span id="userPhone"></span></h2>
-  <p><strong>Balance:</strong> <span id="balanceDisplay"></span> coins</p>
-  <p><strong>Status:</strong> <span id="statusDisplay"></span></p>
+   document.getElementById('register').onclick = () => {
+     const phone = document.getElementById('phone').value;
+     const pin = document.getElementById('pin').value;
+     if (!phone || !pin) return alert('Enter phone and PIN');
 
-  <h3>👤 Nickname & Trust</h3>
-  <input type="text" id="nicknameInput" placeholder="Your nickname" />
-  <button onclick="saveNickname()">Save Nickname</button>
-  <br />
-  <input type="text" id="trustInput" placeholder="Vouch for wallet (phone)" />
-  <button onclick="addTrust()">Add Trust</button>
+     if (!users[phone]) {
+       users[phone] = { pin, balance: 100 }; // Initial balance
+     } else if (users[phone].pin !== pin) {
+       return alert('Incorrect PIN');
+     }
 
-  <h3>💳 Credit Pool</h3>
-  <input type="number" id="borrowAmount" placeholder="Borrow amount" />
-  <button onclick="borrowCoins()">Borrow</button>
+     currentUser = phone;
+     document.getElementById('user').textContent = phone;
+     document.getElementById('balance').textContent = users[phone].balance;
+     document.getElementById('auth').classList.add('hidden');
+     document.getElementById('wallet').classList.remove('hidden');
+   };
 
-  <h3>📤 Send Coins</h3>
-  <input type="text" id="recipientInput" placeholder="Recipient phone" />
-  <input type="text" id="recipientAlias" placeholder="Optional nickname" />
-  <input type="number" id="amountInput" placeholder="Amount" />
-  <button onclick="sendCoins()">Send</button>
+   document.getElementById('send').onclick = () => {
+     const recipient = document.getElementById('recipient').value;
+     const amount = parseInt(document.getElementById('amount').value);
+     const sender = users[currentUser];
 
-  <h3>📚 Transaction History</h3>
-  <select id="filterType" onchange="renderHistory(currentUser)">
-    <option value="all">All</option>
-    <option value="send">Sent</option>
-    <option value="receive">Received</option>
-  </select>
-  <button onclick="exportHistory()">⬇️ Export CSV</button>
+     if (!recipient || !amount || amount <= 0) return alert('Enter valid recipient and amount');
+     if (sender.balance < amount) return alert('Insufficient balance');
 
-  <table id="transactionTable">
-    <thead><tr><th>Type</th><th>Counterparty</th><th>Amount</th><th>Time</th></tr></thead>
-    <tbody></tbody>
-  </table>
+     if (!users[recipient]) users[recipient] = { pin: '0000', balance: 0 }; // Auto-create
+     sender.balance -= amount;
+     users[recipient].balance += amount;
 
-  <h3>📊 Ledger Visualization</h3>
-  <canvas id="chartCanvas" width="600" height="300"></canvas>
-
-  <h3>📦 Snapshot</h3>
-  <button onclick="exportSnapshot()">🧠 Export Snapshot</button>
-  <textarea id="snapshotOutput" readonly></textarea>
-
-  <h3>🔁 Restore</h3>
-  <textarea id="snapshotInput" placeholder="Paste snapshot JSON"></textarea>
-  <button onclick="importSnapshot()">Restore</button>
-</div>
-
-<script>
-  let currentUser = null;
-  const channel = new BroadcastChannel('wallet-sync');
-
-  channel.onmessage = (event) => {
-    if (event.data === 'update-' + currentUser) {
-      renderWallet(currentUser);
-      renderHistory(currentUser);
-      drawChart(currentUser);
-    }
-  };
-
-  function notifyLocal(msg) {
-    if (Notification.permission === 'granted') new Notification(msg);
-  }
-
-  function login() {
-    const input = document.getElementById('loginInput').value.trim();
-    if (!input.match(/^671777\d{4}$/)) { alert('Invalid phone'); return; }
-
-    const walletKey = 'wallet-' + input;
-    const pinKey = walletKey + '-pin';
-
-    if (!localStorage.getItem(walletKey)) {
-      if (confirm('Create wallet for ' + input + '?')) {
-        const pin = prompt('Set a 4-digit PIN');
-        if (!pin || !pin.match(/^\d{4}$/)) { alert('Invalid PIN'); return; }
-        const nickname = prompt('Set nickname:') || '';
-        localStorage.setItem(walletKey, JSON.stringify({ phone: input, coins: 100, status: 'active', nickname, trust: [] }));
-        localStorage.setItem(walletKey + '-logs', JSON.stringify([]));
-        localStorage.setItem(pinKey, btoa(pin));
-        alert('Wallet created.');
-      } else return;
-    }
-
-    const entered = prompt('Enter PIN');
-    if (entered !== atob(localStorage.getItem(pinKey))) { alert('Incorrect PIN'); return; }
-
-    currentUser = input;
-    document.getElementById('userPhone').textContent = currentUser;
-    document.getElementById('loginForm').classList.add('hidden');
-    document.getElementById('walletView').classList.remove('hidden');
-    renderWallet(currentUser);
-    renderHistory(currentUser);
-    drawChart(currentUser);
-  }
-
-  function getWallet(phone) {
-    return JSON.parse(localStorage.getItem('wallet-' + phone) || '{}');
-  }
-
-  function saveWallet(wallet) {
-    localStorage.setItem('wallet-' + wallet.phone, JSON.stringify(wallet));
-  }
-
-  function logTransaction(phone, entry) {
-    const logs = JSON.parse(localStorage.getItem('wallet-' + phone + '-logs') || '[]');
-    logs.push(entry);
-    localStorage.setItem('wallet-' + phone + '-logs', JSON.stringify(logs));
-  }
-
-  function sendCoins() {
-    const to = document.getElementById('recipientInput').value.trim();
-    const alias = document.getElementById('recipientAlias').value.trim();
-    const amount = parseFloat(document.getElementById('amountInput').value.trim());
-    if (!to.match(/^671777\d{4}$/) || isNaN(amount) || amount <= 0) return alert('Invalid transfer');
-
-    const sender = getWallet(currentUser);
-    const receiver = getWallet(to) || { phone: to, coins: 100, status: 'new', nickname: alias, trust: [] };
-    if (sender.coins < amount) return alert('Insufficient balance');
-
-    sender.coins -= amount;
-    receiver.coins += amount;
-    saveWallet(sender);
-    saveWallet(receiver);
-
-    const time = new Date().toISOString();
-    logTransaction(currentUser, { type: 'send', to, amount, time });
-    logTransaction(to, { type: 'receive', from: currentUser, amount, time });
-
-    renderWallet(currentUser);
-    renderHistory(currentUser);
-    drawChart(currentUser);
-    notifyLocal(`🔔 Sent ${amount} coins to ${receiver.nickname || to}`);
-    channel.postMessage('update-' + currentUser);
-  }
-
-  function saveNickname() {
-    const wallet = getWallet(currentUser);
-    wallet.nickname = document.getElementById('nicknameInput').value.trim();
-    saveWallet(wallet);
-    renderWallet(currentUser);
-    alert('Nickname updated');
-  }
-
-  function addTrust() {
-    const target = document.getElementById('trustInput').value.trim();
-    if (!target.match(/^671777\d{4}$/)) return alert('Invalid phone');
-    const wallet = getWallet(currentUser);
-    if (!wallet.trust.includes(target)) {
-      wallet.trust.push(target);
-      saveWallet(wallet);
-      alert(`Trusted ${target}`);
-    }
-  }
-
-  function borrowCoins() {
-    const wallet = getWallet(currentUser);
-    const amount = parseFloat(document.getElementById('borrowAmount').value.trim());
-    if (isNaN(amount) || amount <= 0) return alert('Invalid amount');
-
-    const trustScore = wallet.trust.length;
-    if (trustScore < 2) return alert('Need at least 2 trusted wallets to borrow');
-    const maxBorrow = trustScore * 50;
-    if (amount > maxBorrow) return alert(`Max borrow is ${maxBorrow} coins`);
-
-    wallet.coins += amount;
-    logTransaction(currentUser, { type: 'borrow', from: 'creditPool', amount, time: new Date().toISOString() });
-    saveWallet(wallet);
-    renderWallet(currentUser);
-    renderHistory(currentUser);
-    drawChart(currentUser);
-    alert(`Borrowed ${amount} coins`);
-  }
-
+     document.getElementById('balance').textContent = sender.balance;
+     document.getElementById('status').textContent = `✅ Sent ${amount} tokens to ${recipient}`;
+   };
+ </script>
+</body>
+</html>
